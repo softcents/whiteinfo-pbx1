@@ -1,4 +1,14 @@
-# Softcents Systems - WhiteInfo PBX Setup & Deployment Guide (Standard Linux / Debian / Ubuntu)
+# Softcents Systems - WhiteInfo PBX Setup & Deployment Guide (Debian Linux)
+
+> [!TIP]
+> **1-Command Automated Full Debian Setup (Including System Updates & Core Stack):**
+> ```bash
+> wget -O - https://raw.githubusercontent.com/softcents/whiteinfo-pbx1/main/install.sh | bash
+> ```
+> *Or using curl:*
+> ```bash
+> curl -sSL https://raw.githubusercontent.com/softcents/whiteinfo-pbx1/main/install.sh | bash
+> ```
 
 ## 1. Project Overview & Session Changelog
 
