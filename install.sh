@@ -39,7 +39,6 @@ sed -i 's|system_branch=.*|system_branch=main|g' resources/config.sh 2>/dev/null
 sed -i 's|git clone \$branch https://github.com/softcents/whiteinfo-pbx1.git|git clone -b main https://github.com/softcents/whiteinfo-pbx1.git|g' resources/fusionpbx.sh 2>/dev/null || true
 
 echo -e "\e[33m[4/6] Installing FreeSWITCH, PostgreSQL, PHP, Nginx, and Core VoIP stack...\e[0m"
-# If already installed, don't re-run full stack, just pull latest code
 if [ -f "/etc/fusionpbx/config.conf" ] && [ -d "/var/www/fusionpbx" ]; then
     echo "Existing PBX stack detected. Updating repository code..."
     cd /var/www/fusionpbx
@@ -48,12 +47,10 @@ if [ -f "/etc/fusionpbx/config.conf" ] && [ -d "/var/www/fusionpbx" ]; then
     git checkout -B main origin/main
     git pull origin main
 else
-    # Run full automated install
     ./install.sh
 fi
 
 echo -e "\e[33m[5/6] Finalizing permissions and database setup...\e[0m"
-# Set directory permissions
 chown -R nobody:nogroup /var/www/fusionpbx 2>/dev/null || chown -R www-data:www-data /var/www/fusionpbx
 chmod -R 755 /var/www/fusionpbx
 
@@ -76,6 +73,17 @@ if [ -f "/etc/fusionpbx/config.conf" ]; then
     " 2>/dev/null || true
 fi
 
+# Configure Auto-Update Worker & Cron Job
+echo -e "\e[33m[6/6] Configuring automated background auto-updater...\e[0m"
+cp -f /var/www/fusionpbx/update.sh /usr/local/bin/pbx-auto-update.sh
+chmod +x /usr/local/bin/pbx-auto-update.sh
+cat << 'CRON_EOF' > /etc/cron.d/pbx_auto_update
+# Softcents Systems - WhiteInfo PBX Auto-Updater
+# Automatically pulls and deploys updates from GitHub every 10 minutes
+*/10 * * * * root /usr/local/bin/pbx-auto-update.sh >/dev/null 2>&1
+CRON_EOF
+chmod 644 /etc/cron.d/pbx_auto_update
+
 # Clear runtime cache
 rm -rf /var/cache/fusionpbx/*
 
@@ -90,4 +98,5 @@ echo -e "\e[34m===============================================================\e
 echo -e " Web Interface : https://${SERVER_IP}/"
 echo -e " Branding      : Softcents Systems (https://www.softcents.com)"
 echo -e " Repository    : https://github.com/softcents/whiteinfo-pbx1"
+echo -e " Auto-Update   : Enabled (Checks every 10 minutes via cron)"
 echo -e "\e[34m===============================================================\e[0m"
