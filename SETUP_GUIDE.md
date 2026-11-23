@@ -326,3 +326,39 @@ Or visit the GUI at `https://pbx.yourdomain.com/core/upgrade/`:
 
 ---
 *Maintained by Softcents Systems (https://www.softcents.com)*
+
+---
+
+## 5. WHMCS Provisioning & Billing Module Integration (v1.5.0)
+
+The PBX server includes an automated WHMCS provisioning module located in `whmcs_module/` and packaged as `whiteinfopbx_whmcs_module.zip`.
+
+### 5.1 One-Command WHMCS Module Installation
+Run on your WHMCS server:
+```bash
+cd /path/to/whmcs
+wget -O whiteinfopbx_whmcs_module.zip https://pbx1.whiteinfobd.com/whiteinfopbx_whmcs_module.zip
+unzip -o whiteinfopbx_whmcs_module.zip
+rm whiteinfopbx_whmcs_module.zip
+```
+
+### 5.2 WHMCS Server Configuration
+1. In WHMCS, navigate to **System Settings** ➔ **Servers** (or **Setup** ➔ **Products/Services** ➔ **Servers**).
+2. Click **Add New Server**:
+   - **Name:** `PBX-01 (Primary)`
+   - **Hostname:** `pbx1.whiteinfobd.com`
+   - **IP Address:** `165.99.219.124`
+   - **Module / Type:** `WhiteInfo PBX Multi-Server Billing & Provisioning`
+   - **Access Hash / Token:** `wipbx_557bc41210f5caef05087a48b883fb6f5bf4b1dc7503429f`
+   - **Secure:** Check *Tick to use SSL for Connections* (Port: `443`)
+   - Click **Test Connection** (Returns green Success).
+3. Create a **Server Group** (e.g. `PBX Cluster`) and add the server.
+4. Under **Products/Services** ➔ Your PBX Product ➔ **Module Settings**:
+   - **Module Name:** `WhiteInfo PBX Multi-Server Billing & Provisioning`
+   - **Server Group:** Select your server group.
+   - **Package Extensions Count:** `3` (Default).
+   - **Domain Suffix:** `whiteinfobd.com`
+
+### 5.3 Diagnostic & Audit Logs
+- PBX API transaction log: `/var/log/fusionpbx/billing_api.log`
+- WHMCS system module log: WHMCS Admin ➔ **Utilities** ➔ **Logs** ➔ **Module Log**

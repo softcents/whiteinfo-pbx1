@@ -19,7 +19,30 @@ ini_set("display_errors", 0);
 ini_set("log_errors", 1);
 error_reporting(E_ALL);
 
+function log_billing_api($code, $payload) {
+    $log_dir = "/var/log/fusionpbx";
+    if (!is_dir($log_dir)) {
+        @mkdir($log_dir, 0775, true);
+        @chown($log_dir, "www-data");
+    }
+    $log_file = $log_dir . "/billing_api.log";
+    $ip = $_SERVER["HTTP_CF_CONNECTING_IP"] ?? $_SERVER["HTTP_X_REAL_IP"] ?? $_SERVER["REMOTE_ADDR"] ?? "unknown";
+    $action_name = $GLOBALS["action"] ?? "unknown";
+    $domain_val = $GLOBALS["domain_name"] ?? ($GLOBALS["raw_domain"] ?? "");
+    $entry = sprintf("[%s] [%s] [%s] action=%s domain=%s status=%d payload=%s\n",
+        date("Y-m-d H:i:s"),
+        $ip,
+        $_SERVER["REQUEST_METHOD"] ?? "CLI",
+        $action_name,
+        $domain_val,
+        $code,
+        json_encode($payload, JSON_UNESCAPED_SLASHES)
+    );
+    @file_put_contents($log_file, $entry, FILE_APPEND | LOCK_EX);
+}
+
 function send_json($code, $payload) {
+    log_billing_api($code, $payload);
     http_response_code($code);
     header("Content-Type: application/json; charset=UTF-8");
     header("X-Powered-By: WhiteInfo-PBX-Billing-API");
@@ -87,6 +110,11 @@ $database = new database;
 
 // Validate or auto-resolve domain parameter
 $raw_domain = strtolower(trim($post_data["domain"] ?? $_GET["domain"] ?? ""));
+$raw_domain = preg_replace('#^https?://#i', "", $raw_domain);
+$raw_domain = trim(rtrim($raw_domain, "/"));
+if (strpos($raw_domain, ":") !== false) {
+    $raw_domain = explode(":", $raw_domain)[0];
+}
 $company_name = trim($post_data["company_name"] ?? "");
 if (empty($company_name)) {
     $company_name = trim($post_data["customer_name"] ?? $post_data["name"] ?? "");
@@ -98,6 +126,8 @@ if (empty($raw_domain) && !empty($company_name)) {
     if (!empty($slug)) {
         $raw_domain = $slug . "-pbx.whiteinfobd.com";
     }
+} elseif (!empty($raw_domain) && strpos($raw_domain, ".") === false) {
+    $raw_domain = $raw_domain . "-pbx.whiteinfobd.com";
 }
 
 $domain_name = $raw_domain;
@@ -476,13 +506,23 @@ if ($action === "create") {
             "pass" => $hashed_pass
         ]);
         
-        // Add to company group (Company role - tenant default)
+        // Add to company group
         $company_group_uuid = "f1c41fc2-bc2a-4363-a78d-5a513cb8ca4b";
         $ug_comp_sql = "INSERT INTO v_user_groups (user_group_uuid, domain_uuid, group_name, group_uuid, user_uuid, insert_date) VALUES (:ug_uuid, :d_uuid, 'company', :g_uuid, :u_uuid, now())";
         $database->execute($ug_comp_sql, [
             "ug_uuid" => uuid(),
             "d_uuid" => $domain_uuid,
             "g_uuid" => $company_group_uuid,
+            "u_uuid" => $new_user_uuid
+        ]);
+
+        // Add to admin group (Tenant Administrator - extension & ring group management)
+        $admin_group_uuid = "7ef559ae-39d6-44c3-9126-b50b6c425a2c";
+        $ug_admin_sql = "INSERT INTO v_user_groups (user_group_uuid, domain_uuid, group_name, group_uuid, user_uuid, insert_date) VALUES (:ug_uuid, :d_uuid, 'admin', :g_uuid, :u_uuid, now())";
+        $database->execute($ug_admin_sql, [
+            "ug_uuid" => uuid(),
+            "d_uuid" => $domain_uuid,
+            "g_uuid" => $admin_group_uuid,
             "u_uuid" => $new_user_uuid
         ]);
     } else {
@@ -494,14 +534,24 @@ if ($action === "create") {
                 "u_uuid" => $existing_user_uuid
             ]);
         }
-        // Ensure company group is assigned
+        // Ensure company and admin groups are assigned
         $company_group_uuid = "f1c41fc2-bc2a-4363-a78d-5a513cb8ca4b";
+        $admin_group_uuid = "7ef559ae-39d6-44c3-9126-b50b6c425a2c";
         $has_comp = $database->select("SELECT user_group_uuid FROM v_user_groups WHERE user_uuid = :u AND group_name = 'company'", [":u" => $existing_user_uuid], "column");
         if (empty($has_comp)) {
             $database->execute("INSERT INTO v_user_groups (user_group_uuid, domain_uuid, group_name, group_uuid, user_uuid, insert_date) VALUES (:ug_uuid, :d_uuid, 'company', :g_uuid, :u_uuid, now())", [
                 ":ug_uuid" => uuid(),
                 ":d_uuid" => $domain_uuid,
                 ":g_uuid" => $company_group_uuid,
+                ":u_uuid" => $existing_user_uuid
+            ]);
+        }
+        $has_admin = $database->select("SELECT user_group_uuid FROM v_user_groups WHERE user_uuid = :u AND group_name = 'admin'", [":u" => $existing_user_uuid], "column");
+        if (empty($has_admin)) {
+            $database->execute("INSERT INTO v_user_groups (user_group_uuid, domain_uuid, group_name, group_uuid, user_uuid, insert_date) VALUES (:ug_uuid, :d_uuid, 'admin', :g_uuid, :u_uuid, now())", [
+                ":ug_uuid" => uuid(),
+                ":d_uuid" => $domain_uuid,
+                ":g_uuid" => $admin_group_uuid,
                 ":u_uuid" => $existing_user_uuid
             ]);
         }
@@ -955,6 +1005,7 @@ if ($action === "sso" || $action === "create_session") {
         "domain" => $domain_name,
         "username" => $user_row["username"],
         "sso_url" => $sso_url,
+        "central_sso_url" => "https://pbx1.whiteinfobd.com/sso.php?token=" . $token,
         "expires_in" => 120
     ]);
 }
