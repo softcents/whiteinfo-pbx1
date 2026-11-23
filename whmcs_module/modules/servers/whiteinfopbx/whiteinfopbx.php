@@ -696,6 +696,16 @@ function whiteinfopbx_AdminSingleSignOn($params) {
 }
 
 /**
+ * Legacy Login Link (for older WHMCS themes)
+ */
+function whiteinfopbx_LoginLink($params) {
+    if (!empty($params["domain"])) {
+        return "<a href=\"https://" . htmlspecialchars($params["domain"]) . "/login.php\" target=\"_blank\" class=\"btn btn-default btn-sm\"><i class=\"fa fa-external-link\"></i> PBX Portal</a>";
+    }
+    return "";
+}
+
+/**
  * Client Area Dashboard (Multi-Server Dynamic)
  */
 function whiteinfopbx_ClientArea($params) {
