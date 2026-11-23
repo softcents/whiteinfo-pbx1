@@ -74,6 +74,21 @@
 		}
 	}
 
+//refresh permissions and menu periodically to reflect permission/group updates
+	if (!empty($_SESSION['authorized']) && !empty($_SESSION['user_uuid']) && !empty($_SESSION['domain_uuid'])) {
+		if (empty($_SESSION['permissions_refreshed']) || (time() - $_SESSION['permissions_refreshed'] > 60)) {
+			$group = new groups($database, $_SESSION["domain_uuid"], $_SESSION["user_uuid"]);
+			$group->session();
+
+			unset($_SESSION['permissions'], $_SESSION['user']['permissions']);
+			$permission = new permissions($database, $_SESSION["domain_uuid"], $_SESSION["user_uuid"]);
+			$permission->session();
+
+			unset($_SESSION['menu']['array']);
+			$_SESSION['permissions_refreshed'] = time();
+		}
+	}
+
 //set the domains session
 	if (!isset($_SESSION['domains'])) {
 		$domain = new domains();

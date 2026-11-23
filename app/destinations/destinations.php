@@ -268,7 +268,11 @@
 					//add the actions to the array
 					$destination_app_data = [];
 					foreach ($destination_actions as $action) {
-						$destination_app_data[] = $action['destination_app'].':'.$action['destination_data'];
+						if (is_array($action)) {
+							$destination_app_data[] = ($action['destination_app'] ?? '').':'.($action['destination_data'] ?? '');
+						} elseif (is_string($action)) {
+							$destination_app_data[] = $action;
+						}
 					}
 					$actions = action_name($destination_array, $destination_app_data);
 					$destinations[$x]['actions'] = (!empty($actions)) ? implode(', ', $actions) : '';

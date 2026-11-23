@@ -248,6 +248,56 @@ echo "<script src='resources/javascript/arrows.js?v=$version'></script>\n";
 
 	var showAll = false;
 	const websockets_domain_name = '<?= $_SESSION['domain_name'] ?>';
+	const websockets_domain_uuid = '<?= $_SESSION['domain_uuid'] ?>';
+
+	function is_call_for_current_domain(call) {
+		const currentDomain = String(websockets_domain_name || '').toLowerCase().trim();
+		const currentDomainUuid = String(websockets_domain_uuid || '').trim();
+
+		if (!currentDomain) {
+			return true;
+		}
+
+		// 1. Direct caller_context match
+		let ctx = String(call.caller_context ?? '').toLowerCase().trim();
+		if (ctx && ctx !== 'public' && ctx !== 'default') {
+			if (ctx.includes('@')) {
+				ctx = ctx.split('@')[1];
+			}
+			if (ctx === currentDomain) {
+				return true;
+			}
+		}
+
+		// 2. channel_presence_id match (e.g. 101@domain.com)
+		const pres = String(call.channel_presence_id ?? '').toLowerCase().trim();
+		if (pres && pres.includes('@')) {
+			const presDomain = pres.split('@')[1];
+			if (presDomain === currentDomain) {
+				return true;
+			}
+		}
+
+		// 3. variable_domain_name or domain_name match
+		const dName = String(call.variable_domain_name ?? call.domain_name ?? '').toLowerCase().trim();
+		if (dName && dName === currentDomain) {
+			return true;
+		}
+
+		// 4. variable_domain_uuid or domain_uuid match
+		const dUuid = String(call.variable_domain_uuid ?? call.domain_uuid ?? '').trim();
+		if (dUuid && currentDomainUuid && dUuid === currentDomainUuid) {
+			return true;
+		}
+
+		// 5. caller_channel_name contains @domain
+		const chName = String(call.caller_channel_name ?? '').toLowerCase();
+		if (chName && chName.includes('@' + currentDomain)) {
+			return true;
+		}
+
+		return false;
+	}
 
 	// push PHP values into JS
 	const authToken = {
@@ -571,15 +621,15 @@ echo "<script src='resources/javascript/arrows.js?v=$version'></script>\n";
 				row.dataset.forced_direction = 'outbound';
 			}
 
-			//detect public calls coming to this domain when not showing all calls
-			if (!showAll && call.variable_domain_uuid === '<?= $_SESSION['domain_uuid'] ?>' && call.answer_state === 'ringing') {
-				//console.log('public call', uuid, call);
+			//detect calls coming to this domain when not showing all calls
+			if (!showAll && is_call_for_current_domain(call)) {
 				row.style.display = 'table-row';
-				//if direction is not set then set it as inbound
 				if (direction === '') {
 					replace_arrow_icon(uuid, 'inbound');
 					row.dataset.forced_direction = 'inbound';
 				}
+			} else if (!showAll && !is_call_for_current_domain(call)) {
+				row.style.display = 'none';
 			}
 
 			//detect inbound calls
@@ -830,7 +880,9 @@ echo "<script src='resources/javascript/arrows.js?v=$version'></script>\n";
 			}
 ?>`;
 //end string block
-			if (websockets_domain_name === call.caller_context || showAll) {
+			const isThisDomain = is_call_for_current_domain(call);
+			row.dataset.isCurrentDomain = isThisDomain ? 'true' : 'false';
+			if (isThisDomain || (showAll && <?= permission_exists('call_active_all') ? 'true' : 'false' ?>)) {
 				row.style.display = 'table-row';
 			} else {
 				row.style.display = 'none';
@@ -932,11 +984,14 @@ echo "<script src='resources/javascript/arrows.js?v=$version'></script>\n";
 			<?php endif; ?>
 			<?php if (permission_exists('call_active_all')): ?>
 				update_call_element(`caller_context_${uuid}`, caller_context);
-				//check if the context changes to this domain
-				if (caller_context === '<?= $_SESSION['domain_name'] ?>') {
-					row.style.display = 'table-row';
-				}
 			<?php endif; ?>
+			const isCurrDom = is_call_for_current_domain(call);
+			row.dataset.isCurrentDomain = isCurrDom ? 'true' : 'false';
+			if (isCurrDom || (showAll && <?= permission_exists('call_active_all') ? 'true' : 'false' ?>)) {
+				row.style.display = 'table-row';
+			} else {
+				row.style.display = 'none';
+			}
 				update_call_element(`caller_id_name_${uuid}`, caller_caller_id_name);
 				update_call_element(`caller_id_number_${uuid}`, caller_caller_id_number);
 				update_call_element(`destination_${uuid}`, caller_destination_number);

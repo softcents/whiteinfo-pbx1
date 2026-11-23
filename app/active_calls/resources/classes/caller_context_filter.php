@@ -29,7 +29,7 @@
 /**
  * Description of caller_context_filter
  *
- * @author Tim Fry <tim@fusionpbx.com>
+ * Multi-domain aware filter ensuring active calls only reach subscribers of that domain
  */
 class caller_context_filter implements filter {
 
@@ -43,8 +43,11 @@ class caller_context_filter implements filter {
 	 * @return void
 	 */
 	public function __construct(array $domain_names) {
+		$this->domains = [];
 		foreach ($domain_names as $name) {
-			$this->domains[$name] = true;
+			if (!empty($name)) {
+				$this->domains[strtolower(trim($name))] = true;
+			}
 		}
 	}
 
@@ -55,18 +58,46 @@ class caller_context_filter implements filter {
 	 * @param mixed  $value The value associated with the event key, used to determine
 	 *                      whether the filter chain should drop the payload.
 	 *
-	 * @return bool|null Returns true if the key is not 'caller_context' or the value exists in the domains,
-	 *                   otherwise returns null to drop the payload.
+	 * @return bool|null Returns true if valid, null to drop payload.
 	 */
 	public function __invoke(string $key, $value): ?bool {
-		// return true when not on the event key caller_context to validate
-		if ($key !== 'caller_context') {
+		if (empty($this->domains)) {
 			return true;
 		}
-		// Instruct the filter chain to drop the payload
-		if (!isset($this->domains[$value])) {
-			return null;
+
+		// 1. Check caller_context
+		if ($key === "caller_context") {
+			$val = strtolower(trim((string)$value));
+			if (!empty($val) && $val !== "public" && $val !== "default") {
+				if (strpos($val, "@") !== false) {
+					$val = explode("@", $val)[1];
+				}
+				if (!isset($this->domains[$val])) {
+					return null; // Drop calls from other domains
+				}
+			}
+			return true;
 		}
+
+		// 2. Check channel_presence_id (e.g. 101@domain.com)
+		if ($key === "channel_presence_id" && is_string($value) && strpos($value, "@") !== false) {
+			$parts = explode("@", strtolower(trim($value)));
+			$domain = $parts[1] ?? "";
+			if (!empty($domain) && !isset($this->domains[$domain])) {
+				return null; // Drop calls for extensions in other domains
+			}
+			return true;
+		}
+
+		// 3. Check variable_domain_name or domain_name
+		if (($key === "variable_domain_name" || $key === "domain_name") && is_string($value)) {
+			$val = strtolower(trim($value));
+			if (!empty($val) && !isset($this->domains[$val])) {
+				return null; // Drop calls explicitly tagged with other domain
+			}
+			return true;
+		}
+
 		return true;
 	}
 

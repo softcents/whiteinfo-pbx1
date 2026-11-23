@@ -12,3 +12,9 @@ secure/*.sqlite
 *.php~
 
 app/yealink/resources/firmware/*
+
+*.orig
+*.bak
+
+*.git_bak
+*.git_bak/**

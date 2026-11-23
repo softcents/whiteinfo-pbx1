@@ -16,12 +16,12 @@
 	The Original Code is FusionPBX
 
 	The Initial Developer of the Original Code is
-	Mark J Crane <markjcrane@fusionpbx.com>
+	Mark J Crane <markjcrane@Softcents Systems>
 	Portions created by the Initial Developer are Copyright (C) 2008-2025
 	the Initial Developer. All Rights Reserved.
 
 	Contributor(s):
-	Mark J Crane <markjcrane@fusionpbx.com>
+	Mark J Crane <markjcrane@Softcents Systems>
 */
 
 //includes files
@@ -132,6 +132,14 @@
 									unset($tmp_url, $tmp_path);
 								}
 								break;
+							case 'footer':
+								if (!empty($setting) && !is_array($setting)) {
+									$settings_array['theme'][$subcategory] = $setting;
+								}
+								elseif (is_array($setting)) {
+									$settings_array['theme'][$subcategory] = $setting[0];
+								}
+								break;
 						//otherwise
 							default:
 								if (is_array($setting)) {
@@ -155,7 +163,7 @@
 				$settings_array['theme']['menu_side_toggle_hover_delay_expand'] = isset($settings_array['theme']['menu_side_toggle_hover_delay_expand']) ? $settings_array['theme']['menu_side_toggle_hover_delay_expand'] : '300';
 				$settings_array['theme']['menu_side_toggle_hover_delay_contract'] = isset($settings_array['theme']['menu_side_toggle_hover_delay_contract']) ? $settings_array['theme']['menu_side_toggle_hover_delay_contract'] : '1000';
 				$settings_array['theme']['menu_style'] = !empty($settings_array['theme']['menu_style']) ? $settings_array['theme']['menu_style'] : 'fixed';
-				$settings_array['theme']['footer'] = isset($settings_array['theme']['footer']) ? $settings_array['theme']['footer'] : '&copy; '.$text['theme-label-copyright'].' 2008 - '.date('Y')." <a href='http://www.fusionpbx.com' class='footer' target='_blank'>fusionpbx.com</a> ".$text['theme-label-all_rights_reserved'];
+				$settings_array['theme']['footer'] = '&copy; Copyright 2026 <a href="https://www.softcents.com" class="footer" target="_blank">Softcents Systems</a>. All rights reserved.';
 				$settings_array['theme']['menu_side_item_main_sub_icon_contract'] = !empty($settings_array['theme']['menu_side_item_main_sub_icon_contract']) ? explode(' ', $settings_array['theme']['menu_side_item_main_sub_icon_contract'])[1] : null;
 				$settings_array['theme']['menu_side_item_main_sub_icon_expand'] = !empty($settings_array['theme']['menu_side_item_main_sub_icon_expand']) ? explode(' ', $settings_array['theme']['menu_side_item_main_sub_icon_expand'])[1] : null;
 				$settings_array['theme']['menu_brand_type'] = $settings->get('theme', 'menu_brand_type', 'image');

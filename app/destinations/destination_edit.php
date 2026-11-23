@@ -1958,7 +1958,8 @@
 	$x=0;
 	if (!empty($destination_actions)) {
 		foreach($destination_actions as $row) {
-			echo $destination->select('dialplan', "destination_actions[$x]", $row['destination_app'].':'.$row['destination_data']);
+			$action_str = is_array($row) ? (($row['destination_app'] ?? '').':'.($row['destination_data'] ?? '')) : strval($row);
+			echo $destination->select('dialplan', "destination_actions[$x]", $action_str);
 			echo "<br />\n";
 			$x++;
 		}

@@ -215,24 +215,67 @@ class event_guard {
 					}
 					$sql  = "select ip_address from v_" . $this->table . " ";
 					$sql .= "where " . $this->name . "_uuid in (" . implode(', ', $uuids) . ") ";
-					$rows = $this->database->select($sql, null, 'all');
-					unset($sql);
+					$parameters = [];
+					if (!if_group('superadmin') && (empty($_SESSION['permissions']['event_guard_log_all']) || !permission_exists('event_guard_log_all'))) {
+						$current_domain = !empty($_SESSION['domain_name']) ? $_SESSION['domain_name'] : '';
+						if (!empty($current_domain)) {
+							$sql .= "and (lower(extension) like :current_domain_filter or lower(extension) = :current_domain_exact) ";
+							$parameters['current_domain_filter'] = '%@' . strtolower($current_domain);
+							$parameters['current_domain_exact'] = strtolower($current_domain);
+						} else {
+							$sql .= "and false ";
+						}
+					}
+					$rows = $this->database->select($sql, $parameters, 'all');
+					unset($sql, $parameters);
 
-					// Send an unblock event for each ip address
+					// Send an unblock event and clear firewall for each ip address
 					if (is_array($rows) && @sizeof($rows) != 0) {
 						$esl = event_socket::create();
-						if ($esl->is_connected()) {
-							foreach ($rows as $row) {
-								if (filter_var($row['ip_address'] ?? '', FILTER_VALIDATE_IP)) {
-									$cmd = "sendevent CUSTOM\n";
-									$cmd .= "Event-Name: CUSTOM\n";
-									$cmd .= "Event-Subclass: event_guard:unblock\n";
-									$cmd .= "Unblock-Address: " . $row['ip_address'] . "\n";
-									$switch_result = $esl->request($cmd);
+						$esl_ok = ($esl && $esl->is_connected());
+						$chains = ["sip-auth-ip", "sip-auth-fail", "f2b-nginx-404", "f2b-sshd"];
+
+						foreach ($rows as $row) {
+							$ip = trim($row['ip_address'] ?? '');
+							if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+								continue;
+							}
+
+							// 1. Event socket unblock
+							if ($esl_ok) {
+								$cmd = "sendevent CUSTOM\n";
+								$cmd .= "Event-Name: CUSTOM\n";
+								$cmd .= "Event-Subclass: event_guard:unblock\n";
+								$cmd .= "Unblock-Address: " . $ip . "\n";
+								$switch_result = $esl->request($cmd);
+							}
+
+							// 2. Fail2ban unban
+							exec("sudo /usr/bin/fail2ban-client unban " . escapeshellarg($ip) . " 2>/dev/null");
+
+							// 3. iptables unblock
+							foreach ($chains as $chain) {
+								for ($i = 0; $i < 10; $i++) {
+									unset($ret);
+									exec("sudo /usr/sbin/iptables -C " . escapeshellarg($chain) . " -s " . escapeshellarg($ip) . " -j DROP 2>/dev/null", $o, $ret);
+									if ($ret === 0) {
+										exec("sudo /usr/sbin/iptables -D " . escapeshellarg($chain) . " -s " . escapeshellarg($ip) . " -j DROP 2>/dev/null");
+									} else {
+										unset($ret2);
+										exec("sudo /usr/sbin/iptables -C " . escapeshellarg($chain) . " -s " . escapeshellarg($ip) . " -j REJECT 2>/dev/null", $o2, $ret2);
+										if ($ret2 === 0) {
+											exec("sudo /usr/sbin/iptables -D " . escapeshellarg($chain) . " -s " . escapeshellarg($ip) . " -j REJECT 2>/dev/null");
+										} else {
+											break;
+										}
+									}
 								}
 							}
-							unset($cmd, $switch_result);
+
+							// 4. Update log status in database
+							$this->database->execute("UPDATE v_event_guard_logs SET log_status = 'unblocked', update_date = now() WHERE ip_address = :ip", [':ip' => $ip]);
 						}
+						unset($cmd, $switch_result);
 					}
 					unset($rows, $row, $uuids);
 

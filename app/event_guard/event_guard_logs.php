@@ -99,10 +99,26 @@
 		exit;
 	}
 
+//domain filter: restrict tenant users to their own domain
+	$domain_sql = "";
+	$domain_params = [];
+	if (!if_group('superadmin') && (empty($_SESSION['permissions']['event_guard_log_all']) || !permission_exists('event_guard_log_all'))) {
+		$current_domain = !empty($_SESSION['domain_name']) ? $_SESSION['domain_name'] : "";
+		if (!empty($current_domain)) {
+			$domain_sql = "and (lower(extension) like :current_domain_filter or lower(extension) = :current_domain_exact) ";
+			$domain_params['current_domain_filter'] = '%@' . strtolower($current_domain);
+			$domain_params['current_domain_exact'] = strtolower($current_domain);
+		} else {
+			$domain_sql = "and false ";
+		}
+	}
+
 //get the count
 	$sql = "select count(event_guard_log_uuid) ";
 	$sql .= "from v_event_guard_logs ";
 	$sql .= "where true ";
+	$sql .= $domain_sql;
+	$parameters = $domain_params;
 	if (!empty($search)) {
 		$sql .= "and (";
 		$sql .= "	lower(hostname) like :search ";
@@ -152,6 +168,8 @@
 	$sql .= "log_status ";
 	$sql .= "from v_event_guard_logs ";
 	$sql .= "where true ";
+	$sql .= $domain_sql;
+	$parameters = $domain_params;
 	if (!empty($search)) {
 		$sql .= "and (";
 		$sql .= "	lower(hostname) like :search ";

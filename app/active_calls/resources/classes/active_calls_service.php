@@ -55,6 +55,10 @@ class active_calls_service extends service implements websocket_service_interfac
 		// Domain
 		'caller_context',
 		'channel_presence_id',
+		'variable_domain_name',
+		'variable_domain_uuid',
+		'domain_name',
+		'domain_uuid',
 		// Ringing, Hangup, Answered
 		'answer_state',
 		'channel_call_state',
@@ -112,7 +116,11 @@ class active_calls_service extends service implements websocket_service_interfac
 		'call_direction'               => 'call_active_direction',
 		'variable_call_direction'      => 'call_active_direction',
 		'channel_presence_id'          => 'call_active_view',
-		'caller_context'               => 'call_active_domain',
+		'caller_context'               => 'call_active_view',
+		'variable_domain_name'         => 'call_active_view',
+		'variable_domain_uuid'         => 'call_active_view',
+		'domain_name'                  => 'call_active_view',
+		'domain_uuid'                  => 'call_active_view',
 	];
 
 	/**
@@ -186,9 +194,8 @@ class active_calls_service extends service implements websocket_service_interfac
 	 * @return filter
 	 */
 	public static function create_filter_chain_for(subscriber $subscriber): filter {
-		// Do not filter domain
-		if ($subscriber->has_permission('call_active_all') || $subscriber->is_service()) {
-			self::log("Subscriber $subscriber->id has permission to view all active calls", LOG_DEBUG);
+		// Only internal backend services bypass domain filtering
+		if ($subscriber->is_service()) {
 			return filter_chain::and_link([
 				new event_filter(self::SWITCH_EVENTS),
 				new permission_filter(self::PERMISSION_MAP, $subscriber->get_permissions()),
@@ -196,24 +203,21 @@ class active_calls_service extends service implements websocket_service_interfac
 			]);
 		}
 
-		// Filter on single domain name
-		if ($subscriber->has_permission('call_active_domain')) {
-			self::log("Subscriber $subscriber->id has permission to view active calls for their domain", LOG_DEBUG);
+		$domain_name = $subscriber->get_domain_name();
+		if (!empty($domain_name)) {
+			self::log("Subscriber $subscriber->id filtering active calls on domain: $domain_name", LOG_DEBUG);
 			return filter_chain::and_link([
 				new event_filter(self::SWITCH_EVENTS),
 				new permission_filter(self::PERMISSION_MAP, $subscriber->get_permissions()),
 				new event_key_filter(self::EVENT_KEYS),
-				new caller_context_filter([$subscriber->get_domain_name()]),
+				new caller_context_filter([$domain_name]),
 			]);
 		}
 
-		self::log("Subscriber $subscriber->id does not have permission to view all active calls or active calls for their domain. Filtering on extensions.", LOG_DEBUG);
-		// Filter on extensions
 		return filter_chain::and_link([
 			new event_filter(self::SWITCH_EVENTS),
 			new permission_filter(self::PERMISSION_MAP, $subscriber->get_permissions()),
 			new event_key_filter(self::EVENT_KEYS),
-			new extension_filter($subscriber->get_user_setting('extension', [])),
 		]);
 	}
 
@@ -467,14 +471,37 @@ class active_calls_service extends service implements websocket_service_interfac
 		$count = count($calls);
 		$this->debug("Sending calls in progress ($count)");
 
+		// Check subscriber domain
+		$subscriber_domain = strtolower(trim((string)$websocket_message->domain_name()));
+
 		// Use the subscribers permissions to filter out the event keys not permitted
 		$filter = filter_chain::or_link([new permission_filter(self::PERMISSION_MAP, $websocket_message->permissions())]);
 
 		/** @var event_message $event */
 		foreach ($calls as $event) {
+			// Strict domain filtering: if subscriber is associated with a domain, only send calls for that domain
+			if (!empty($subscriber_domain)) {
+				$call_domain = strtolower(trim((string)$event->caller_context));
+				if (empty($call_domain) || $call_domain === 'public' || $call_domain === 'default') {
+					if (!empty($event->channel_presence_id) && strpos($event->channel_presence_id, '@') !== false) {
+						$call_domain = explode('@', strtolower(trim($event->channel_presence_id)))[1] ?? '';
+					} elseif (!empty($event->variable_domain_name)) {
+						$call_domain = strtolower(trim((string)$event->variable_domain_name));
+					} elseif (!empty($event->domain_name)) {
+						$call_domain = strtolower(trim((string)$event->domain_name));
+					}
+				}
+				if (strpos($call_domain, '@') !== false) {
+					$call_domain = explode('@', $call_domain)[1] ?? '';
+				}
+				if (!empty($call_domain) && $call_domain !== $subscriber_domain) {
+					continue; // Skip calls from other domains
+				}
+			}
+
 			// Remove keys that are not permitted by filter
 			$event->apply_filter($filter);
-			$response['payload'] = $event;
+			$response['payload'] = $event->to_array();
 			$response['topic'] = $event->name;
 			$websocket_response = new websocket_message($response);
 			websocket_client::send($this->ws_client->socket(), $websocket_response);
@@ -790,7 +817,29 @@ class active_calls_service extends service implements websocket_service_interfac
 			$message->caller_channel_name = $call['name'];
 
 			//domain or context
-			$message->caller_context = $call['context'];
+			$context = $call['context'] ?? '';
+			$presence_id = $call['presence_id'] ?? '';
+			$accountcode = $call['accountcode'] ?? '';
+			$domain_name = '';
+
+			if (!empty($context) && $context !== 'public' && $context !== 'default') {
+				if (strpos($context, '@') !== false) {
+					$domain_name = explode('@', $context)[1];
+				} else {
+					$domain_name = $context;
+				}
+			} elseif (!empty($presence_id) && strpos($presence_id, '@') !== false) {
+				$domain_name = explode('@', $presence_id)[1];
+			} elseif (!empty($accountcode)) {
+				$domain_name = $accountcode;
+			}
+
+			$message->caller_context = !empty($domain_name) ? $domain_name : $context;
+			$message->domain_name = $domain_name;
+			$message->variable_domain_name = $domain_name;
+			if (!empty($presence_id)) {
+				$message->channel_presence_id = $presence_id;
+			}
 			$message->caller_caller_id_name = $call['initial_cid_name'];
 			$message->caller_caller_id_number = $call['initial_cid_num'];
 			$message->caller_destination_number = $call['initial_dest'];
