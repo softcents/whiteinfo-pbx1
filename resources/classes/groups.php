@@ -103,7 +103,7 @@ class groups {
 	public function assigned() {
 		$sql = "select ";
 		$sql .= "u.user_group_uuid, ";
-		$sql .= "u.domain_uuid, ";
+		$sql .= "coalesce(u.domain_uuid, :domain_uuid) as domain_uuid, ";
 		$sql .= "u.user_uuid, ";
 		$sql .= "u.group_uuid, ";
 		$sql .= "g.group_name, ";
@@ -111,7 +111,7 @@ class groups {
 		$sql .= "from ";
 		$sql .= "v_user_groups as u, ";
 		$sql .= "v_groups as g ";
-		$sql .= "where u.domain_uuid = :domain_uuid ";
+		$sql .= "where (u.domain_uuid = :domain_uuid or u.domain_uuid is null) ";
 		$sql .= "and u.user_uuid = :user_uuid ";
 		$sql .= "and u.group_uuid = g.group_uuid ";
 		$parameters['domain_uuid'] = $this->domain_uuid;
@@ -119,7 +119,15 @@ class groups {
 		$groups = $this->database->select($sql, $parameters, 'all');
 		unset($sql, $parameters);
 		if (!empty($groups)) {
-			return $groups;
+			$unique_groups = [];
+			$seen = [];
+			foreach ($groups as $row) {
+				if (empty($seen[$row['group_name']])) {
+					$seen[$row['group_name']] = true;
+					$unique_groups[] = $row;
+				}
+			}
+			return $unique_groups;
 		} else {
 			return [];
 		}

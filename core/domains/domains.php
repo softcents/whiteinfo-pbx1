@@ -66,6 +66,17 @@
 		//clear the extension array so that it is regenerated for the selected domain
 			unset($_SESSION['extension_array']);
 
+		//refresh permissions and menu for the newly selected domain
+			if (!empty($_SESSION['user_uuid'])) {
+				$group = new groups($database, $domain_uuid, $_SESSION['user_uuid']);
+				$group->session();
+				unset($_SESSION['permissions'], $_SESSION['user']['permissions']);
+				$permission = new permissions($database, $domain_uuid, $_SESSION['user_uuid']);
+				$permission->session();
+				unset($_SESSION['menu']['array']);
+				$_SESSION['permissions_refreshed'] = time();
+			}
+
 		//set the setting arrays
 			$domain = new domains();
 			$domain->set();
